@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Botonico">
+    <title>Botonico</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+            min-height: 100vh;
+            padding-bottom: 20px;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        
+        .header {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            color: white;
+            font-size: 28px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .header p {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 14px;
+        }
+        
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .upload-btn {
+            width: 100%;
+            background: white;
+            color: #667eea;
+            border: none;
+            border-radius: 16px;
+            padding: 16px;
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            cursor: pointer;
+            margin-bottom: 20px;
+            transition: transform 0.1s;
+        }
+        
+        .upload-btn:active {
+            transform: scale(0.98);
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: white;
+        }
+        
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+        
+        .empty-state h2 {
+            font-size: 20px;
+            margin-bottom: 10px;
+        }
+        
+        .empty-state p {
+            opacity: 0.7;
+            font-size: 14px;
+        }
+        
+        .audio-card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .audio-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 12px;
+        }
+        
+        .audio-info {
+            flex: 1;
+            min-width: 0;
+            margin-right: 10px;
+        }
+        
+        .audio-name {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        .audio-size {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+        }
+        
+        .delete-btn {
+            background: none;
+            border: none;
+            color: #ef4444;
+            cursor: pointer;
+            padding: 8px;
+            transition: transform 0.1s;
+        }
+        
+        .delete-btn:active {
+            transform: scale(0.9);
+        }
+        
+        .progress-bar {
+            height: 4px;
+            background: #e5e7eb;
+            border-radius: 2px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: #667eea;
+            transition: width 0.1s;
+        }
+        
+        .time-display {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 12px;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .play-btn {
+            flex: 1;
+            border: none;
+            border-radius: 12px;
+            padding: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+        
+        .play-btn:active {
+            transform: scale(0.98);
+        }
+        
+        .play-btn.playing {
+            background: #667eea;
+            color: white;
+        }
+        
+        .play-btn.paused {
+            background: #ede9fe;
+            color: #667eea;
+        }
+        
+        .share-btn {
+            background: #10b981;
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 12px 16px;
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+        
+        .share-btn:active {
+            transform: scale(0.98);
+        }
+        
+        input[type="file"] {
+            display: none;
+        }
+        
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎵 Botonico</h1>
+        <p id="audioCount">0 audios</p>
+    </div>
+    
+    <div class="container">
+        <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
+            <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 5v14M5 12h14"/>
+            </svg>
+            Agregar Audios
+        </button>
+        
+        <input type="file" id="fileInput" accept="audio/*" multiple onchange="handleFileUpload(event)">
+        
+        <div id="emptyState" class="empty-state">
+            <svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            <h2>No hay audios aún</h2>
+            <p>Toca el botón de arriba para agregar</p>
+        </div>
+        
+        <div id="audioList"></div>
+    </div>
+    
+    <audio id="audioPlayer"></audio>
+    
+    <script>
+        let audios = [];
+        let currentPlaying = null;
+        const audioPlayer = document.getElementById('audioPlayer');
+        
+        // Cargar audios guardados
+        function loadAudios() {
+            const saved = localStorage.getItem('botonicoAudios');
+            if (saved) {
+                audios = JSON.parse(saved);
+                renderAudios();
+            }
+        }
+        
+        // Guardar audios
+        function saveAudios() {
+            localStorage.setItem('botonicoAudios', JSON.stringify(audios));
+        }
+        
+        // Manejar subida de archivos
+        function handleFileUpload(event) {
+            const files = Array.from(event.target.files);
+            
+            files.forEach(file => {
+                if (file.type.startsWith('audio/')) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const audio = {
+                            id: Date.now() + Math.random(),
+                            name: file.name.replace(/\.[^/.]+$/, ''),
+                            data: e.target.result,
+                            type: file.type,
+                            size: file.size
+                        };
+                        audios.push(audio);
+                        saveAudios();
+                        renderAudios();
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+            
+            event.target.value = '';
+        }
+        
+        // Reproducir/pausar audio
+        function togglePlay(id) {
+            const audio = audios.find(a => a.id === id);
+            
+            if (currentPlaying === id) {
+                audioPlayer.pause();
+                currentPlaying = null;
+            } else {
+                audioPlayer.src = audio.data;
+                audioPlayer.play();
+                currentPlaying = id;
+            }
+            
+            renderAudios();
+        }
+        
+        // Compartir audio
+        async function shareAudio(id) {
+            const audio = audios.find(a => a.id === id);
+            
+            try {
+                const response = await fetch(audio.data);
+                const blob = await response.blob();
+                const file = new File([blob], `${audio.name}.mp3`, { type: audio.type });
+                
+                if (navigator.share && navigator.canShare({ files: [file] })) {
+                    await navigator.share({
+                        files: [file],
+                        title: audio.name,
+                        text: `Audio: ${audio.name}`
+                    });
+                } else {
+                    // Fallback: descargar
+                    const a = document.createElement('a');
+                    a.href = audio.data;
+                    a.download = `${audio.name}.mp3`;
+                    a.click();
+                    alert('Audio descargado. Ahora puedes enviarlo por WhatsApp.');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error al compartir el audio');
+            }
+        }
+        
+        // Eliminar audio
+        function deleteAudio(id) {
+            if (confirm('¿Eliminar este audio?')) {
+                audios = audios.filter(a => a.id !== id);
+                if (currentPlaying === id) {
+                    audioPlayer.pause();
+                    currentPlaying = null;
+                }
+                saveAudios();
+                renderAudios();
+            }
+        }
+        
+        // Formatear tiempo
+        function formatTime(seconds) {
+            if (!seconds || isNaN(seconds)) return '0:00';
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+        
+        // Renderizar lista de audios
+        function renderAudios() {
+            const audioList = document.getElementById('audioList');
+            const emptyState = document.getElementById('emptyState');
+            const audioCount = document.getElementById('audioCount');
+            
+            audioCount.textContent = `${audios.length} audio${audios.length !== 1 ? 's' : ''}`;
+            
+            if (audios.length === 0) {
+                emptyState.classList.remove('hidden');
+                audioList.innerHTML = '';
+                return;
+            }
+            
+            emptyState.classList.add('hidden');
+            
+            audioList.innerHTML = audios.map(audio => {
+                const isPlaying = currentPlaying === audio.id;
+                
+                return `
+                    <div class="audio-card">
+                        <div class="audio-header">
+                            <div class="audio-info">
+                                <div class="audio-name">${audio.name}</div>
+                                <div class="audio-size">${(audio.size / 1024).toFixed(1)} KB</div>
+                            </div>
+                            <button class="delete-btn" onclick="deleteAudio(${audio.id})">
+                                <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                </svg>
+                            </button>
+                        </div>
+                        
+                        ${isPlaying ? `
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="progress-${audio.id}"></div>
+                            </div>
+                            <div class="time-display">
+                                <span id="current-${audio.id}">0:00</span>
+                                <span id="duration-${audio.id}">0:00</span>
+                            </div>
+                        ` : ''}
+                        
+                        <div class="button-group">
+                            <button class="play-btn ${isPlaying ? 'playing' : 'paused'}" onclick="togglePlay(${audio.id})">
+                                ${isPlaying ? `
+                                    <svg width="18" height="18" fill="currentColor">
+                                        <rect x="6" y="4" width="4" height="16"></rect>
+                                        <rect x="14" y="4" width="4" height="16"></rect>
+                                    </svg>
+                                    Pausar
+                                ` : `
+                                    <svg width="18" height="18" fill="currentColor">
+                                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                    </svg>
+                                    Reproducir
+                                `}
+                            </button>
+                            <button class="share-btn" onclick="shareAudio(${audio.id})">
+                                <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="18" cy="5" r="3"></circle>
+                                    <circle cx="6" cy="12" r="3"></circle>
+                                    <circle cx="18" cy="19" r="3"></circle>
+                                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+                                </svg>
+                                WhatsApp
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        // Actualizar progreso
+        audioPlayer.addEventListener('timeupdate', () => {
+            if (currentPlaying) {
+                const progress = (audioPlayer.currentTime / audioPlayer.duration) * 100;
+                const progressBar = document.getElementById(`progress-${currentPlaying}`);
+                const currentTime = document.getElementById(`current-${currentPlaying}`);
+                const duration = document.getElementById(`duration-${currentPlaying}`);
+                
+                if (progressBar) progressBar.style.width = `${progress}%`;
+                if (currentTime) currentTime.textContent = formatTime(audioPlayer.currentTime);
+                if (duration) duration.textContent = formatTime(audioPlayer.duration);
+            }
+        });
+        
+        // Cuando termina el audio
+        audioPlayer.addEventListener('ended', () => {
+            currentPlaying = null;
+            renderAudios();
+        });
+        
+        // Cargar al inicio
+        loadAudios();
+    </script>
+</body>
+</html>
