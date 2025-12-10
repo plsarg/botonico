@@ -265,7 +265,6 @@
         let currentPlaying = null;
         const audioPlayer = document.getElementById('audioPlayer');
         
-        // Cargar audios guardados
         function loadAudios() {
             const saved = localStorage.getItem('botonicoAudios');
             if (saved) {
@@ -274,12 +273,10 @@
             }
         }
         
-        // Guardar audios
         function saveAudios() {
             localStorage.setItem('botonicoAudios', JSON.stringify(audios));
         }
         
-        // Manejar subida de archivos
         function handleFileUpload(event) {
             const files = Array.from(event.target.files);
             
@@ -305,7 +302,6 @@
             event.target.value = '';
         }
         
-        // Reproducir/pausar audio
         function togglePlay(id) {
             const audio = audios.find(a => a.id === id);
             
@@ -321,7 +317,6 @@
             renderAudios();
         }
         
-        // Compartir audio
         async function shareAudio(id) {
             const audio = audios.find(a => a.id === id);
             
@@ -337,7 +332,6 @@
                         text: `Audio: ${audio.name}`
                     });
                 } else {
-                    // Fallback: descargar
                     const a = document.createElement('a');
                     a.href = audio.data;
                     a.download = `${audio.name}.mp3`;
@@ -350,7 +344,6 @@
             }
         }
         
-        // Eliminar audio
         function deleteAudio(id) {
             if (confirm('¿Eliminar este audio?')) {
                 audios = audios.filter(a => a.id !== id);
@@ -363,7 +356,6 @@
             }
         }
         
-        // Formatear tiempo
         function formatTime(seconds) {
             if (!seconds || isNaN(seconds)) return '0:00';
             const mins = Math.floor(seconds / 60);
@@ -371,7 +363,6 @@
             return `${mins}:${secs.toString().padStart(2, '0')}`;
         }
         
-        // Renderizar lista de audios
         function renderAudios() {
             const audioList = document.getElementById('audioList');
             const emptyState = document.getElementById('emptyState');
@@ -446,7 +437,6 @@
             }).join('');
         }
         
-        // Actualizar progreso
         audioPlayer.addEventListener('timeupdate', () => {
             if (currentPlaying) {
                 const progress = (audioPlayer.currentTime / audioPlayer.duration) * 100;
@@ -460,13 +450,11 @@
             }
         });
         
-        // Cuando termina el audio
         audioPlayer.addEventListener('ended', () => {
             currentPlaying = null;
             renderAudios();
         });
         
-        // Cargar al inicio
         loadAudios();
     </script>
 </body>
