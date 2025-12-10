@@ -72,6 +72,11 @@
             transform: scale(0.98);
         }
         
+        .upload-btn.loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+        
         .empty-state {
             text-align: center;
             padding: 60px 20px;
@@ -227,6 +232,31 @@
         .hidden {
             display: none;
         }
+        
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            z-index: 1000;
+            animation: slideUp 0.3s ease;
+        }
+        
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateX(-50%) translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+        }
     </style>
 </head>
 <body>
@@ -236,14 +266,14 @@
     </div>
     
     <div class="container">
-        <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
+        <button class="upload-btn" id="uploadBtn" onclick="document.getElementById('fileInput').click()">
             <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 5v14M5 12h14"/>
             </svg>
-            Agregar Audios
+            <span id="uploadText">Agregar Audios</span>
         </button>
         
-        <input type="file" id="fileInput" accept="audio/*" multiple onchange="handleFileUpload(event)">
+        <input type="file" id="fileInput" accept="audio/*,video/ogg,.opus,.ogg,.m4a" multiple onchange="handleFileUpload(event)">
         
         <div id="emptyState" class="empty-state">
             <svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -253,6 +283,7 @@
             </svg>
             <h2>No hay audios aún</h2>
             <p>Toca el botón de arriba para agregar</p>
+            <p style="margin-top: 10px; font-size: 12px;">✅ Compatible con audios de WhatsApp</p>
         </div>
         
         <div id="audioList"></div>
@@ -264,6 +295,14 @@
         let audios = [];
         let currentPlaying = null;
         const audioPlayer = document.getElementById('audioPlayer');
+        
+        function showToast(message) {
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
         
         function loadAudios() {
             const saved = localStorage.getItem('botonicoAudios');
@@ -279,23 +318,81 @@
         
         function handleFileUpload(event) {
             const files = Array.from(event.target.files);
+            const uploadBtn = document.getElementById('uploadBtn');
+            const uploadText = document.getElementById('uploadText');
+            
+            if (files.length === 0) return;
+            
+            uploadBtn.classList.add('loading');
+            uploadText.textContent = `Cargando ${files.length} archivo${files.length > 1 ? 's' : ''}...`;
+            
+            let processed = 0;
+            let successful = 0;
             
             files.forEach(file => {
-                if (file.type.startsWith('audio/')) {
+                // Aceptar todos los tipos de audio, incluyendo opus, ogg, m4a
+                const isAudio = file.type.startsWith('audio/') || 
+                               file.type === 'video/ogg' || 
+                               file.name.endsWith('.opus') || 
+                               file.name.endsWith('.ogg') ||
+                               file.name.endsWith('.m4a');
+                
+                if (isAudio) {
                     const reader = new FileReader();
                     reader.onload = function(e) {
-                        const audio = {
-                            id: Date.now() + Math.random(),
-                            name: file.name.replace(/\.[^/.]+$/, ''),
-                            data: e.target.result,
-                            type: file.type,
-                            size: file.size
-                        };
-                        audios.push(audio);
-                        saveAudios();
-                        renderAudios();
+                        // Intentar crear un elemento de audio para verificar compatibilidad
+                        const testAudio = new Audio();
+                        testAudio.src = e.target.result;
+                        
+                        testAudio.addEventListener('loadedmetadata', function() {
+                            const audio = {
+                                id: Date.now() + Math.random(),
+                                name: file.name.replace(/\.[^/.]+$/, ''),
+                                data: e.target.result,
+                                type: file.type || 'audio/mpeg',
+                                size: file.size,
+                                originalFormat: file.name.split('.').pop()
+                            };
+                            audios.push(audio);
+                            successful++;
+                            processed++;
+                            
+                            if (processed === files.length) {
+                                saveAudios();
+                                renderAudios();
+                                uploadBtn.classList.remove('loading');
+                                uploadText.textContent = 'Agregar Audios';
+                                showToast(`✅ ${successful} audio${successful > 1 ? 's' : ''} agregado${successful > 1 ? 's' : ''}`);
+                            }
+                        });
+                        
+                        testAudio.addEventListener('error', function() {
+                            processed++;
+                            showToast(`⚠️ No se pudo cargar: ${file.name}`);
+                            
+                            if (processed === files.length) {
+                                if (successful > 0) {
+                                    saveAudios();
+                                    renderAudios();
+                                }
+                                uploadBtn.classList.remove('loading');
+                                uploadText.textContent = 'Agregar Audios';
+                            }
+                        });
                     };
                     reader.readAsDataURL(file);
+                } else {
+                    processed++;
+                    showToast(`⚠️ Archivo no compatible: ${file.name}`);
+                    
+                    if (processed === files.length) {
+                        if (successful > 0) {
+                            saveAudios();
+                            renderAudios();
+                        }
+                        uploadBtn.classList.remove('loading');
+                        uploadText.textContent = 'Agregar Audios';
+                    }
                 }
             });
             
@@ -310,7 +407,10 @@
                 currentPlaying = null;
             } else {
                 audioPlayer.src = audio.data;
-                audioPlayer.play();
+                audioPlayer.play().catch(err => {
+                    showToast('⚠️ Error al reproducir. El formato puede no ser compatible.');
+                    console.error('Error playing:', err);
+                });
                 currentPlaying = id;
             }
             
@@ -323,7 +423,13 @@
             try {
                 const response = await fetch(audio.data);
                 const blob = await response.blob();
-                const file = new File([blob], `${audio.name}.mp3`, { type: audio.type });
+                
+                // Usar el nombre con la extensión original si existe
+                const fileName = audio.originalFormat ? 
+                    `${audio.name}.${audio.originalFormat}` : 
+                    `${audio.name}.mp3`;
+                
+                const file = new File([blob], fileName, { type: audio.type });
                 
                 if (navigator.share && navigator.canShare({ files: [file] })) {
                     await navigator.share({
@@ -334,13 +440,13 @@
                 } else {
                     const a = document.createElement('a');
                     a.href = audio.data;
-                    a.download = `${audio.name}.mp3`;
+                    a.download = fileName;
                     a.click();
-                    alert('Audio descargado. Ahora puedes enviarlo por WhatsApp.');
+                    showToast('📥 Audio descargado');
                 }
             } catch (error) {
                 console.error('Error:', error);
-                alert('Error al compartir el audio');
+                showToast('⚠️ Error al compartir el audio');
             }
         }
         
@@ -353,6 +459,7 @@
                 }
                 saveAudios();
                 renderAudios();
+                showToast('🗑️ Audio eliminado');
             }
         }
         
@@ -380,13 +487,14 @@
             
             audioList.innerHTML = audios.map(audio => {
                 const isPlaying = currentPlaying === audio.id;
+                const format = audio.originalFormat ? audio.originalFormat.toUpperCase() : 'MP3';
                 
                 return `
                     <div class="audio-card">
                         <div class="audio-header">
                             <div class="audio-info">
                                 <div class="audio-name">${audio.name}</div>
-                                <div class="audio-size">${(audio.size / 1024).toFixed(1)} KB</div>
+                                <div class="audio-size">${(audio.size / 1024).toFixed(1)} KB • ${format}</div>
                             </div>
                             <button class="delete-btn" onclick="deleteAudio(${audio.id})">
                                 <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
