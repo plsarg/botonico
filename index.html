@@ -7,6 +7,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Botonico">
     <title>Botonico</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         * {
             margin: 0;
@@ -238,13 +239,14 @@
             bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.8);
+            background: rgba(0, 0, 0, 0.85);
             color: white;
             padding: 12px 24px;
-            border-radius: 8px;
+            border-radius: 12px;
             font-size: 14px;
             z-index: 1000;
             animation: slideUp 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
         }
         
         @keyframes slideUp {
@@ -257,12 +259,30 @@
                 transform: translateX(-50%) translateY(0);
             }
         }
+
+        .connection-status {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #10b981;
+            margin-left: 8px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
     </style>
 </head>
 <body>
     <div class="header">
         <h1>🎵 Botonico</h1>
-        <p id="audioCount">0 audios</p>
+        <p id="audioCount">
+            <span>Cargando...</span>
+            <span class="connection-status"></span>
+        </p>
     </div>
     
     <div class="container">
@@ -283,7 +303,7 @@
             </svg>
             <h2>No hay audios aún</h2>
             <p>Toca el botón de arriba para agregar</p>
-            <p style="margin-top: 10px; font-size: 12px;">✅ Compatible con audios de WhatsApp</p>
+            <p style="margin-top: 10px; font-size: 12px;">☁️ Biblioteca compartida en la nube</p>
         </div>
         
         <div id="audioList"></div>
@@ -292,6 +312,11 @@
     <audio id="audioPlayer"></audio>
     
     <script>
+        // Configuración de Supabase
+        const SUPABASE_URL = 'https://dgzzwodwfcifyqozltwl.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_hEWHWIMsqHcVv0wOcezwQQ_p2VekZRH';
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        
         let audios = [];
         let currentPlaying = null;
         const audioPlayer = document.getElementById('audioPlayer');
@@ -304,19 +329,31 @@
             setTimeout(() => toast.remove(), 3000);
         }
         
-        function loadAudios() {
-            const saved = localStorage.getItem('botonicoAudios');
-            if (saved) {
-                audios = JSON.parse(saved);
+        async function loadAudios() {
+            try {
+                const { data, error } = await supabase.storage.from('audios').list();
+                
+                if (error) throw error;
+                
+                audios = data.filter(file => !file.name.includes('.emptyFolderPlaceholder'));
+                
+                // Obtener URLs públicas
+                for (let audio of audios) {
+                    const { data: urlData } = supabase.storage
+                        .from('audios')
+                        .getPublicUrl(audio.name);
+                    audio.url = urlData.publicUrl;
+                    audio.displayName = audio.name.replace(/\.[^/.]+$/, '').replace(/^\d+-/, '');
+                }
+                
                 renderAudios();
+            } catch (error) {
+                console.error('Error cargando audios:', error);
+                showToast('⚠️ Error al cargar audios');
             }
         }
         
-        function saveAudios() {
-            localStorage.setItem('botonicoAudios', JSON.stringify(audios));
-        }
-        
-        function handleFileUpload(event) {
+        async function handleFileUpload(event) {
             const files = Array.from(event.target.files);
             const uploadBtn = document.getElementById('uploadBtn');
             const uploadText = document.getElementById('uploadText');
@@ -324,13 +361,11 @@
             if (files.length === 0) return;
             
             uploadBtn.classList.add('loading');
-            uploadText.textContent = `Cargando ${files.length} archivo${files.length > 1 ? 's' : ''}...`;
+            uploadText.textContent = `Subiendo ${files.length} archivo${files.length > 1 ? 's' : ''}...`;
             
-            let processed = 0;
             let successful = 0;
             
-            files.forEach(file => {
-                // Aceptar todos los tipos de audio, incluyendo opus, ogg, m4a
+            for (const file of files) {
                 const isAudio = file.type.startsWith('audio/') || 
                                file.type === 'video/ogg' || 
                                file.name.endsWith('.opus') || 
@@ -338,128 +373,96 @@
                                file.name.endsWith('.m4a');
                 
                 if (isAudio) {
-                    const reader = new FileReader();
-                    reader.onload = function(e) {
-                        // Intentar crear un elemento de audio para verificar compatibilidad
-                        const testAudio = new Audio();
-                        testAudio.src = e.target.result;
+                    try {
+                        const fileName = `${Date.now()}-${file.name}`;
+                        const { error } = await supabase.storage
+                            .from('audios')
+                            .upload(fileName, file);
                         
-                        testAudio.addEventListener('loadedmetadata', function() {
-                            const audio = {
-                                id: Date.now() + Math.random(),
-                                name: file.name.replace(/\.[^/.]+$/, ''),
-                                data: e.target.result,
-                                type: file.type || 'audio/mpeg',
-                                size: file.size,
-                                originalFormat: file.name.split('.').pop()
-                            };
-                            audios.push(audio);
-                            successful++;
-                            processed++;
-                            
-                            if (processed === files.length) {
-                                saveAudios();
-                                renderAudios();
-                                uploadBtn.classList.remove('loading');
-                                uploadText.textContent = 'Agregar Audios';
-                                showToast(`✅ ${successful} audio${successful > 1 ? 's' : ''} agregado${successful > 1 ? 's' : ''}`);
-                            }
-                        });
+                        if (error) throw error;
                         
-                        testAudio.addEventListener('error', function() {
-                            processed++;
-                            showToast(`⚠️ No se pudo cargar: ${file.name}`);
-                            
-                            if (processed === files.length) {
-                                if (successful > 0) {
-                                    saveAudios();
-                                    renderAudios();
-                                }
-                                uploadBtn.classList.remove('loading');
-                                uploadText.textContent = 'Agregar Audios';
-                            }
-                        });
-                    };
-                    reader.readAsDataURL(file);
-                } else {
-                    processed++;
-                    showToast(`⚠️ Archivo no compatible: ${file.name}`);
-                    
-                    if (processed === files.length) {
-                        if (successful > 0) {
-                            saveAudios();
-                            renderAudios();
-                        }
-                        uploadBtn.classList.remove('loading');
-                        uploadText.textContent = 'Agregar Audios';
+                        successful++;
+                    } catch (error) {
+                        console.error('Error subiendo:', error);
+                        showToast(`⚠️ Error: ${file.name}`);
                     }
+                } else {
+                    showToast(`⚠️ No compatible: ${file.name}`);
                 }
-            });
+            }
+            
+            uploadBtn.classList.remove('loading');
+            uploadText.textContent = 'Agregar Audios';
+            
+            if (successful > 0) {
+                showToast(`✅ ${successful} audio${successful > 1 ? 's' : ''} agregado${successful > 1 ? 's' : ''}`);
+                await loadAudios();
+            }
             
             event.target.value = '';
         }
         
-        function togglePlay(id) {
-            const audio = audios.find(a => a.id === id);
-            
-            if (currentPlaying === id) {
+        function togglePlay(audioUrl) {
+            if (currentPlaying === audioUrl) {
                 audioPlayer.pause();
                 currentPlaying = null;
             } else {
-                audioPlayer.src = audio.data;
+                audioPlayer.src = audioUrl;
                 audioPlayer.play().catch(err => {
-                    showToast('⚠️ Error al reproducir. El formato puede no ser compatible.');
+                    showToast('⚠️ Error al reproducir');
                     console.error('Error playing:', err);
                 });
-                currentPlaying = id;
+                currentPlaying = audioUrl;
             }
             
             renderAudios();
         }
         
-        async function shareAudio(id) {
-            const audio = audios.find(a => a.id === id);
-            
+        async function shareAudio(audio) {
             try {
-                const response = await fetch(audio.data);
+                const response = await fetch(audio.url);
                 const blob = await response.blob();
-                
-                // Usar el nombre con la extensión original si existe
-                const fileName = audio.originalFormat ? 
-                    `${audio.name}.${audio.originalFormat}` : 
-                    `${audio.name}.mp3`;
-                
-                const file = new File([blob], fileName, { type: audio.type });
+                const file = new File([blob], audio.name, { type: blob.type });
                 
                 if (navigator.share && navigator.canShare({ files: [file] })) {
                     await navigator.share({
                         files: [file],
-                        title: audio.name,
-                        text: `Audio: ${audio.name}`
+                        title: audio.displayName,
+                        text: `Audio: ${audio.displayName}`
                     });
                 } else {
                     const a = document.createElement('a');
-                    a.href = audio.data;
-                    a.download = fileName;
+                    a.href = audio.url;
+                    a.download = audio.name;
                     a.click();
                     showToast('📥 Audio descargado');
                 }
             } catch (error) {
                 console.error('Error:', error);
-                showToast('⚠️ Error al compartir el audio');
+                showToast('⚠️ Error al compartir');
             }
         }
         
-        function deleteAudio(id) {
-            if (confirm('¿Eliminar este audio?')) {
-                audios = audios.filter(a => a.id !== id);
-                if (currentPlaying === id) {
+        async function deleteAudio(audio) {
+            if (!confirm(`¿Eliminar "${audio.displayName}"?`)) return;
+            
+            try {
+                const { error } = await supabase.storage
+                    .from('audios')
+                    .remove([audio.name]);
+                
+                if (error) throw error;
+                
+                if (currentPlaying === audio.url) {
                     audioPlayer.pause();
                     currentPlaying = null;
                 }
-                saveAudios();
-                renderAudios();
+                
                 showToast('🗑️ Audio eliminado');
+                await loadAudios();
+            } catch (error) {
+                console.error('Error:', error);
+                showToast('⚠️ Error al eliminar');
             }
         }
         
@@ -470,12 +473,18 @@
             return `${mins}:${secs.toString().padStart(2, '0')}`;
         }
         
+        function formatSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+        
         function renderAudios() {
             const audioList = document.getElementById('audioList');
             const emptyState = document.getElementById('emptyState');
             const audioCount = document.getElementById('audioCount');
             
-            audioCount.textContent = `${audios.length} audio${audios.length !== 1 ? 's' : ''}`;
+            audioCount.innerHTML = `${audios.length} audio${audios.length !== 1 ? 's' : ''} <span class="connection-status"></span>`;
             
             if (audios.length === 0) {
                 emptyState.classList.remove('hidden');
@@ -486,17 +495,17 @@
             emptyState.classList.add('hidden');
             
             audioList.innerHTML = audios.map(audio => {
-                const isPlaying = currentPlaying === audio.id;
-                const format = audio.originalFormat ? audio.originalFormat.toUpperCase() : 'MP3';
+                const isPlaying = currentPlaying === audio.url;
+                const format = audio.name.split('.').pop().toUpperCase();
                 
                 return `
                     <div class="audio-card">
                         <div class="audio-header">
                             <div class="audio-info">
-                                <div class="audio-name">${audio.name}</div>
-                                <div class="audio-size">${(audio.size / 1024).toFixed(1)} KB • ${format}</div>
+                                <div class="audio-name">${audio.displayName}</div>
+                                <div class="audio-size">${formatSize(audio.metadata?.size || 0)} • ${format}</div>
                             </div>
-                            <button class="delete-btn" onclick="deleteAudio(${audio.id})">
+                            <button class="delete-btn" onclick='deleteAudio(${JSON.stringify(audio)})'>
                                 <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <polyline points="3 6 5 6 21 6"></polyline>
                                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -506,16 +515,16 @@
                         
                         ${isPlaying ? `
                             <div class="progress-bar">
-                                <div class="progress-fill" id="progress-${audio.id}"></div>
+                                <div class="progress-fill" id="progress-${audio.name}"></div>
                             </div>
                             <div class="time-display">
-                                <span id="current-${audio.id}">0:00</span>
-                                <span id="duration-${audio.id}">0:00</span>
+                                <span id="current-${audio.name}">0:00</span>
+                                <span id="duration-${audio.name}">0:00</span>
                             </div>
                         ` : ''}
                         
                         <div class="button-group">
-                            <button class="play-btn ${isPlaying ? 'playing' : 'paused'}" onclick="togglePlay(${audio.id})">
+                            <button class="play-btn ${isPlaying ? 'playing' : 'paused'}" onclick='togglePlay("${audio.url}")'>
                                 ${isPlaying ? `
                                     <svg width="18" height="18" fill="currentColor">
                                         <rect x="6" y="4" width="4" height="16"></rect>
@@ -529,7 +538,7 @@
                                     Reproducir
                                 `}
                             </button>
-                            <button class="share-btn" onclick="shareAudio(${audio.id})">
+                            <button class="share-btn" onclick='shareAudio(${JSON.stringify(audio)})'>
                                 <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <circle cx="18" cy="5" r="3"></circle>
                                     <circle cx="6" cy="12" r="3"></circle>
@@ -547,10 +556,13 @@
         
         audioPlayer.addEventListener('timeupdate', () => {
             if (currentPlaying) {
+                const audio = audios.find(a => a.url === currentPlaying);
+                if (!audio) return;
+                
                 const progress = (audioPlayer.currentTime / audioPlayer.duration) * 100;
-                const progressBar = document.getElementById(`progress-${currentPlaying}`);
-                const currentTime = document.getElementById(`current-${currentPlaying}`);
-                const duration = document.getElementById(`duration-${currentPlaying}`);
+                const progressBar = document.getElementById(`progress-${audio.name}`);
+                const currentTime = document.getElementById(`current-${audio.name}`);
+                const duration = document.getElementById(`duration-${audio.name}`);
                 
                 if (progressBar) progressBar.style.width = `${progress}%`;
                 if (currentTime) currentTime.textContent = formatTime(audioPlayer.currentTime);
@@ -563,7 +575,11 @@
             renderAudios();
         });
         
+        // Cargar audios al inicio
         loadAudios();
+        
+        // Recargar cada 30 segundos para ver nuevos audios
+        setInterval(loadAudios, 30000);
     </script>
 </body>
 </html>
