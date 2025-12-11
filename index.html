@@ -7,7 +7,6 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Botonico">
     <title>Botonico</title>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         * {
             margin: 0;
@@ -312,10 +311,9 @@
     <audio id="audioPlayer"></audio>
     
     <script>
-        // Configuración de Supabase
+        // Configuración de Supabase usando fetch directo
         const SUPABASE_URL = 'https://dgzzwodwfcifyqozltwl.supabase.co';
-        const SUPABASE_KEY = 'sb_publishable_hEWHWIMsqHcVv0wOcezwQQ_p2VekZRH';
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnenp3b2R3ZmNpZnlxb3psdHdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0MzE2NjAsImV4cCI6MjA4MTAwNzY2MH0.U14RXyynpMhozrqE7WzAXq9cTo3byQVtIcEdz3onnl4';
         
         let audios = [];
         let currentPlaying = null;
@@ -331,20 +329,23 @@
         
         async function loadAudios() {
             try {
-                const { data, error } = await supabase.storage.from('audios').list();
+                const response = await fetch(`${SUPABASE_URL}/storage/v1/object/list/audios`, {
+                    headers: {
+                        'Authorization': `Bearer ${SUPABASE_KEY}`,
+                        'apikey': SUPABASE_KEY
+                    }
+                });
                 
-                if (error) throw error;
+                if (!response.ok) throw new Error('Error al cargar');
                 
-                audios = data.filter(file => !file.name.includes('.emptyFolderPlaceholder'));
+                const data = await response.json();
+                audios = data.filter(file => file.name && !file.name.includes('.emptyFolderPlaceholder'));
                 
-                // Obtener URLs públicas
-                for (let audio of audios) {
-                    const { data: urlData } = supabase.storage
-                        .from('audios')
-                        .getPublicUrl(audio.name);
-                    audio.url = urlData.publicUrl;
+                // Agregar URLs públicas
+                audios.forEach(audio => {
+                    audio.url = `${SUPABASE_URL}/storage/v1/object/public/audios/${audio.name}`;
                     audio.displayName = audio.name.replace(/\.[^/.]+$/, '').replace(/^\d+-/, '');
-                }
+                });
                 
                 renderAudios();
             } catch (error) {
@@ -375,11 +376,21 @@
                 if (isAudio) {
                     try {
                         const fileName = `${Date.now()}-${file.name}`;
-                        const { error } = await supabase.storage
-                            .from('audios')
-                            .upload(fileName, file);
                         
-                        if (error) throw error;
+                        const response = await fetch(`${SUPABASE_URL}/storage/v1/object/audios/${fileName}`, {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${SUPABASE_KEY}`,
+                                'apikey': SUPABASE_KEY,
+                                'Content-Type': file.type || 'audio/mpeg'
+                            },
+                            body: file
+                        });
+                        
+                        if (!response.ok) {
+                            const error = await response.text();
+                            throw new Error(error);
+                        }
                         
                         successful++;
                     } catch (error) {
@@ -396,7 +407,7 @@
             
             if (successful > 0) {
                 showToast(`✅ ${successful} audio${successful > 1 ? 's' : ''} agregado${successful > 1 ? 's' : ''}`);
-                await loadAudios();
+                setTimeout(() => loadAudios(), 1000);
             }
             
             event.target.value = '';
@@ -443,23 +454,28 @@
             }
         }
         
-        async function deleteAudio(audio) {
-            if (!confirm(`¿Eliminar "${audio.displayName}"?`)) return;
+        async function deleteAudio(audioName, displayName) {
+            if (!confirm(`¿Eliminar "${displayName}"?`)) return;
             
             try {
-                const { error } = await supabase.storage
-                    .from('audios')
-                    .remove([audio.name]);
+                const response = await fetch(`${SUPABASE_URL}/storage/v1/object/audios/${audioName}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${SUPABASE_KEY}`,
+                        'apikey': SUPABASE_KEY
+                    }
+                });
                 
-                if (error) throw error;
+                if (!response.ok) throw new Error('Error al eliminar');
                 
-                if (currentPlaying === audio.url) {
+                const audio = audios.find(a => a.name === audioName);
+                if (currentPlaying === audio?.url) {
                     audioPlayer.pause();
                     currentPlaying = null;
                 }
                 
                 showToast('🗑️ Audio eliminado');
-                await loadAudios();
+                setTimeout(() => loadAudios(), 500);
             } catch (error) {
                 console.error('Error:', error);
                 showToast('⚠️ Error al eliminar');
@@ -474,6 +490,7 @@
         }
         
         function formatSize(bytes) {
+            if (!bytes) return '0 KB';
             if (bytes < 1024) return bytes + ' B';
             if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
             return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
@@ -497,15 +514,16 @@
             audioList.innerHTML = audios.map(audio => {
                 const isPlaying = currentPlaying === audio.url;
                 const format = audio.name.split('.').pop().toUpperCase();
+                const safeId = audio.name.replace(/[^a-zA-Z0-9]/g, '_');
                 
                 return `
                     <div class="audio-card">
                         <div class="audio-header">
                             <div class="audio-info">
                                 <div class="audio-name">${audio.displayName}</div>
-                                <div class="audio-size">${formatSize(audio.metadata?.size || 0)} • ${format}</div>
+                                <div class="audio-size">${formatSize(audio.metadata?.size)} • ${format}</div>
                             </div>
-                            <button class="delete-btn" onclick='deleteAudio(${JSON.stringify(audio)})'>
+                            <button class="delete-btn" onclick='deleteAudio("${audio.name}", "${audio.displayName}")'>
                                 <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <polyline points="3 6 5 6 21 6"></polyline>
                                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -515,11 +533,11 @@
                         
                         ${isPlaying ? `
                             <div class="progress-bar">
-                                <div class="progress-fill" id="progress-${audio.name}"></div>
+                                <div class="progress-fill" id="progress-${safeId}"></div>
                             </div>
                             <div class="time-display">
-                                <span id="current-${audio.name}">0:00</span>
-                                <span id="duration-${audio.name}">0:00</span>
+                                <span id="current-${safeId}">0:00</span>
+                                <span id="duration-${safeId}">0:00</span>
                             </div>
                         ` : ''}
                         
@@ -538,7 +556,7 @@
                                     Reproducir
                                 `}
                             </button>
-                            <button class="share-btn" onclick='shareAudio(${JSON.stringify(audio)})'>
+                            <button class="share-btn" onclick='shareAudio({url: "${audio.url}", name: "${audio.name}", displayName: "${audio.displayName}"})'>
                                 <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <circle cx="18" cy="5" r="3"></circle>
                                     <circle cx="6" cy="12" r="3"></circle>
@@ -559,10 +577,11 @@
                 const audio = audios.find(a => a.url === currentPlaying);
                 if (!audio) return;
                 
+                const safeId = audio.name.replace(/[^a-zA-Z0-9]/g, '_');
                 const progress = (audioPlayer.currentTime / audioPlayer.duration) * 100;
-                const progressBar = document.getElementById(`progress-${audio.name}`);
-                const currentTime = document.getElementById(`current-${audio.name}`);
-                const duration = document.getElementById(`duration-${audio.name}`);
+                const progressBar = document.getElementById(`progress-${safeId}`);
+                const currentTime = document.getElementById(`current-${safeId}`);
+                const duration = document.getElementById(`duration-${safeId}`);
                 
                 if (progressBar) progressBar.style.width = `${progress}%`;
                 if (currentTime) currentTime.textContent = formatTime(audioPlayer.currentTime);
@@ -578,7 +597,7 @@
         // Cargar audios al inicio
         loadAudios();
         
-        // Recargar cada 30 segundos para ver nuevos audios
+        // Recargar cada 30 segundos
         setInterval(loadAudios, 30000);
     </script>
 </body>
