@@ -377,18 +377,23 @@
                     try {
                         const fileName = `${Date.now()}-${file.name}`;
                         
+                        // Leer el archivo como ArrayBuffer
+                        const arrayBuffer = await file.arrayBuffer();
+                        
                         const response = await fetch(`${SUPABASE_URL}/storage/v1/object/audios/${fileName}`, {
                             method: 'POST',
                             headers: {
                                 'Authorization': `Bearer ${SUPABASE_KEY}`,
                                 'apikey': SUPABASE_KEY,
-                                'Content-Type': file.type || 'audio/mpeg'
+                                'Content-Type': file.type || 'audio/mpeg',
+                                'x-upsert': 'false'
                             },
-                            body: file
+                            body: arrayBuffer
                         });
                         
                         if (!response.ok) {
                             const error = await response.text();
+                            console.error('Error response:', error);
                             throw new Error(error);
                         }
                         
