@@ -336,10 +336,22 @@
                     }
                 });
                 
-                if (!response.ok) throw new Error('Error al cargar');
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Error response:', errorText);
+                    throw new Error(`Error al cargar: ${response.status}`);
+                }
                 
                 const data = await response.json();
-                audios = data.filter(file => file.name && !file.name.includes('.emptyFolderPlaceholder'));
+                
+                // Si data es un array
+                if (Array.isArray(data)) {
+                    audios = data.filter(file => file.name && !file.name.includes('.emptyFolderPlaceholder'));
+                } else if (data.error) {
+                    throw new Error(data.error.message);
+                } else {
+                    audios = [];
+                }
                 
                 // Agregar URLs públicas
                 audios.forEach(audio => {
@@ -350,7 +362,10 @@
                 renderAudios();
             } catch (error) {
                 console.error('Error cargando audios:', error);
-                showToast('⚠️ Error al cargar audios');
+                // No mostrar toast cada 30 segundos, solo en la primera carga
+                if (audios.length === 0) {
+                    showToast('⚠️ Error al conectar. Verifica las políticas de Storage.');
+                }
             }
         }
         
@@ -436,27 +451,72 @@
         
         async function shareAudio(audio) {
             try {
-                const response = await fetch(audio.url);
-                const blob = await response.blob();
-                const file = new File([blob], audio.name, { type: blob.type });
+                showToast('📤 Preparando audio...');
                 
-                if (navigator.share && navigator.canShare({ files: [file] })) {
-                    await navigator.share({
-                        files: [file],
-                        title: audio.displayName,
-                        text: `Audio: ${audio.displayName}`
-                    });
+                // Descargar el archivo desde Supabase
+                const response = await fetch(audio.url);
+                if (!response.ok) throw new Error('Error al descargar');
+                
+                const blob = await response.blob();
+                
+                // Detectar el tipo correcto basado en la extensión
+                const extension = audio.name.split('.').pop().toLowerCase();
+                let mimeType = blob.type;
+                
+                // Mapear extensiones a tipos MIME correctos
+                const mimeTypes = {
+                    'mp3': 'audio/mpeg',
+                    'opus': 'audio/ogg',
+                    'ogg': 'audio/ogg',
+                    'm4a': 'audio/mp4',
+                    'wav': 'audio/wav',
+                    'aac': 'audio/aac'
+                };
+                
+                if (mimeTypes[extension]) {
+                    mimeType = mimeTypes[extension];
+                }
+                
+                const cleanName = audio.displayName + '.' + extension;
+                
+                // Crear un nuevo blob con el tipo correcto
+                const audioBlob = new Blob([blob], { type: mimeType });
+                const file = new File([audioBlob], cleanName, { type: mimeType });
+                
+                console.log('Sharing file:', cleanName, 'Type:', mimeType, 'Size:', file.size);
+                
+                // Intentar compartir nativamente
+                if (navigator.share) {
+                    try {
+                        await navigator.share({
+                            files: [file],
+                            title: audio.displayName
+                        });
+                    } catch (shareError) {
+                        console.error('Share error:', shareError);
+                        // Si falla el compartir, descargar
+                        downloadAudio(audioBlob, cleanName);
+                    }
                 } else {
-                    const a = document.createElement('a');
-                    a.href = audio.url;
-                    a.download = audio.name;
-                    a.click();
-                    showToast('📥 Audio descargado');
+                    // Fallback: descargar
+                    downloadAudio(audioBlob, cleanName);
                 }
             } catch (error) {
                 console.error('Error:', error);
                 showToast('⚠️ Error al compartir');
             }
+        }
+        
+        function downloadAudio(blob, filename) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast('📥 Audio descargado. Ahora envíalo manualmente por WhatsApp');
         }
         
         async function deleteAudio(audioName, displayName) {
