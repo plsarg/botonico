@@ -7,6 +7,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Botonico">
     <title>Botonico</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -311,9 +312,11 @@
     <audio id="audioPlayer"></audio>
     
     <script>
-        // Configuración de Supabase usando fetch directo
-        const SUPABASE_URL = 'https://dgzzwodwfcifyqozltwl.supabase.co';
-        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnenp3b2R3ZmNpZnlxb3psdHdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0MzE2NjAsImV4cCI6MjA4MTAwNzY2MH0.U14RXyynpMhozrqE7WzAXq9cTo3byQVtIcEdz3onnl4';
+        // Inicializar Supabase
+        const supabase = window.supabase.createClient(
+            'https://dgzzwodwfcifyqozltwl.supabase.co',
+            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnenp3b2R3ZmNpZnlxb3psdHdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0MzE2NjAsImV4cCI6MjA4MTAwNzY2MH0.U14RXyynpMhozrqE7WzAXq9cTo3byQVtIcEdz3onnl4'
+        );
         
         let audios = [];
         let currentPlaying = null;
@@ -329,52 +332,35 @@
         
         async function loadAudios() {
             try {
-                // Usar el endpoint correcto con el path vacío
-                const response = await fetch(`${SUPABASE_URL}/storage/v1/object/list/audios?limit=100&offset=0&sortBy=name`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${SUPABASE_KEY}`,
-                        'apikey': SUPABASE_KEY,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        prefix: '',
-                        limit: 100,
-                        offset: 0
-                    })
+                const { data, error } = await supabase.storage.from('audios').list('', {
+                    limit: 100,
+                    offset: 0,
+                    sortBy: { column: 'name', order: 'asc' }
                 });
                 
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    console.error('Error response:', response.status, errorText);
-                    throw new Error(`Error ${response.status}: ${errorText}`);
+                if (error) {
+                    console.error('Supabase error:', error);
+                    throw error;
                 }
                 
-                const data = await response.json();
-                console.log('Loaded data:', data);
+                console.log('Raw data from Supabase:', data);
                 
-                // Si data es un array
-                if (Array.isArray(data)) {
-                    audios = data.filter(file => file.name && !file.name.includes('.emptyFolderPlaceholder') && !file.id);
-                } else if (data.error) {
-                    throw new Error(data.error.message);
-                } else {
-                    audios = [];
-                }
+                audios = data.filter(file => file.name && !file.name.includes('.emptyFolderPlaceholder'));
                 
-                // Agregar URLs públicas
+                // Obtener URLs públicas
                 audios.forEach(audio => {
-                    audio.url = `${SUPABASE_URL}/storage/v1/object/public/audios/${audio.name}`;
+                    const { data: urlData } = supabase.storage.from('audios').getPublicUrl(audio.name);
+                    audio.url = urlData.publicUrl;
                     audio.displayName = audio.name.replace(/\.[^/.]+$/, '').replace(/^\d+-/, '');
+                    console.log('Audio processed:', audio.name, audio.url);
                 });
                 
-                console.log('Processed audios:', audios);
+                console.log('Total audios loaded:', audios.length);
                 renderAudios();
             } catch (error) {
                 console.error('Error cargando audios:', error);
-                // No mostrar toast cada 30 segundos, solo en la primera carga
                 if (audios.length === 0) {
-                    showToast('⚠️ Error al conectar con Supabase');
+                    showToast('⚠️ Error: ' + (error.message || 'No se pueden cargar los audios'));
                 }
             }
         }
@@ -402,27 +388,17 @@
                     try {
                         const fileName = `${Date.now()}-${file.name}`;
                         
-                        // Leer el archivo como ArrayBuffer
-                        const arrayBuffer = await file.arrayBuffer();
+                        const { error } = await supabase.storage
+                            .from('audios')
+                            .upload(fileName, file, {
+                                cacheControl: '3600',
+                                upsert: false
+                            });
                         
-                        const response = await fetch(`${SUPABASE_URL}/storage/v1/object/audios/${fileName}`, {
-                            method: 'POST',
-                            headers: {
-                                'Authorization': `Bearer ${SUPABASE_KEY}`,
-                                'apikey': SUPABASE_KEY,
-                                'Content-Type': file.type || 'audio/mpeg',
-                                'x-upsert': 'false'
-                            },
-                            body: arrayBuffer
-                        });
-                        
-                        if (!response.ok) {
-                            const error = await response.text();
-                            console.error('Error response:', error);
-                            throw new Error(error);
-                        }
+                        if (error) throw error;
                         
                         successful++;
+                        console.log('File uploaded:', fileName);
                     } catch (error) {
                         console.error('Error subiendo:', error);
                         showToast(`⚠️ Error: ${file.name}`);
@@ -463,17 +439,12 @@
             try {
                 showToast('📤 Preparando audio...');
                 
-                // Descargar el archivo desde Supabase
                 const response = await fetch(audio.url);
                 if (!response.ok) throw new Error('Error al descargar');
                 
                 const blob = await response.blob();
-                
-                // Detectar el tipo correcto basado en la extensión
                 const extension = audio.name.split('.').pop().toLowerCase();
-                let mimeType = blob.type;
                 
-                // Mapear extensiones a tipos MIME correctos
                 const mimeTypes = {
                     'mp3': 'audio/mpeg',
                     'opus': 'audio/ogg',
@@ -483,19 +454,11 @@
                     'aac': 'audio/aac'
                 };
                 
-                if (mimeTypes[extension]) {
-                    mimeType = mimeTypes[extension];
-                }
-                
+                const mimeType = mimeTypes[extension] || 'audio/mpeg';
                 const cleanName = audio.displayName + '.' + extension;
-                
-                // Crear un nuevo blob con el tipo correcto
                 const audioBlob = new Blob([blob], { type: mimeType });
                 const file = new File([audioBlob], cleanName, { type: mimeType });
                 
-                console.log('Sharing file:', cleanName, 'Type:', mimeType, 'Size:', file.size);
-                
-                // Intentar compartir nativamente
                 if (navigator.share) {
                     try {
                         await navigator.share({
@@ -504,11 +467,9 @@
                         });
                     } catch (shareError) {
                         console.error('Share error:', shareError);
-                        // Si falla el compartir, descargar
                         downloadAudio(audioBlob, cleanName);
                     }
                 } else {
-                    // Fallback: descargar
                     downloadAudio(audioBlob, cleanName);
                 }
             } catch (error) {
@@ -526,22 +487,16 @@
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-            showToast('📥 Audio descargado. Ahora envíalo manualmente por WhatsApp');
+            showToast('📥 Audio descargado');
         }
         
         async function deleteAudio(audioName, displayName) {
             if (!confirm(`¿Eliminar "${displayName}"?`)) return;
             
             try {
-                const response = await fetch(`${SUPABASE_URL}/storage/v1/object/audios/${audioName}`, {
-                    method: 'DELETE',
-                    headers: {
-                        'Authorization': `Bearer ${SUPABASE_KEY}`,
-                        'apikey': SUPABASE_KEY
-                    }
-                });
+                const { error } = await supabase.storage.from('audios').remove([audioName]);
                 
-                if (!response.ok) throw new Error('Error al eliminar');
+                if (error) throw error;
                 
                 const audio = audios.find(a => a.name === audioName);
                 if (currentPlaying === audio?.url) {
