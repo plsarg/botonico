@@ -50,6 +50,32 @@
             padding: 20px;
         }
         
+        .search-box {
+            width: 100%;
+            background: white;
+            border: none;
+            border-radius: 16px;
+            padding: 14px 16px 14px 44px;
+            font-size: 15px;
+            margin-bottom: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            position: relative;
+        }
+        
+        .search-container {
+            position: relative;
+            margin-bottom: 12px;
+        }
+        
+        .search-icon {
+            position: absolute;
+            left: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #9ca3af;
+            pointer-events: none;
+        }
+        
         .upload-btn {
             width: 100%;
             background: white;
@@ -286,6 +312,15 @@
     </div>
     
     <div class="container">
+        <!-- Barra de búsqueda -->
+        <div class="search-container">
+            <svg class="search-icon" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="m21 21-4.35-4.35"></path>
+            </svg>
+            <input type="text" class="search-box" id="searchInput" placeholder="Buscar audios..." oninput="filterAudios()">
+        </div>
+        
         <button class="upload-btn" id="uploadBtn" onclick="document.getElementById('fileInput').click()">
             <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 5v14M5 12h14"/>
@@ -319,6 +354,7 @@
         );
         
         let audios = [];
+        let filteredAudios = [];
         let currentPlaying = null;
         const audioPlayer = document.getElementById('audioPlayer');
         
@@ -356,13 +392,21 @@
                 });
                 
                 console.log('Total audios loaded:', audios.length);
-                renderAudios();
+                filterAudios();
             } catch (error) {
                 console.error('Error cargando audios:', error);
                 if (audios.length === 0) {
                     showToast('⚠️ Error: ' + (error.message || 'No se pueden cargar los audios'));
                 }
             }
+        }
+        
+        function filterAudios() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            filteredAudios = audios.filter(audio => 
+                audio.displayName.toLowerCase().includes(searchTerm)
+            );
+            renderAudios();
         }
         
         async function handleFileUpload(event) {
@@ -459,19 +503,52 @@
                 const audioBlob = new Blob([blob], { type: mimeType });
                 const file = new File([audioBlob], cleanName, { type: mimeType });
                 
+                // Detectar dispositivo
+                const userAgent = navigator.userAgent.toLowerCase();
+                const isAndroid = userAgent.includes('android');
+                const isIOS = /iphone|ipad|ipod/.test(userAgent);
+                
+                // Intentar compartir nativamente
                 if (navigator.share) {
                     try {
-                        await navigator.share({
-                            files: [file],
-                            title: audio.displayName
-                        });
+                        // En iOS funciona perfectamente con files
+                        if (isIOS && navigator.canShare && navigator.canShare({ files: [file] })) {
+                            await navigator.share({
+                                files: [file],
+                                title: audio.displayName
+                            });
+                            return;
+                        }
+                        
+                        // En Android, algunos navegadores soportan compartir files
+                        if (isAndroid && navigator.canShare && navigator.canShare({ files: [file] })) {
+                            await navigator.share({
+                                files: [file],
+                                title: audio.displayName,
+                                text: audio.displayName
+                            });
+                            return;
+                        }
+                        
+                        // Fallback: compartir sin archivo (solo texto)
+                        if (isAndroid) {
+                            // En Android, descargar el archivo primero
+                            downloadAudio(audioBlob, cleanName);
+                            showToast('📥 Descargado. Ahora puedes compartirlo desde tu galería');
+                            return;
+                        }
                     } catch (shareError) {
-                        console.error('Share error:', shareError);
-                        downloadAudio(audioBlob, cleanName);
+                        if (shareError.name !== 'AbortError') {
+                            console.error('Share error:', shareError);
+                            downloadAudio(audioBlob, cleanName);
+                        }
+                        return;
                     }
-                } else {
-                    downloadAudio(audioBlob, cleanName);
                 }
+                
+                // Si no hay Web Share API, descargar directamente
+                downloadAudio(audioBlob, cleanName);
+                
             } catch (error) {
                 console.error('Error:', error);
                 showToast('⚠️ Error al compartir');
@@ -486,7 +563,7 @@
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+            setTimeout(() => URL.revokeObjectURL(url), 100);
             showToast('📥 Audio descargado');
         }
         
@@ -530,18 +607,43 @@
             const audioList = document.getElementById('audioList');
             const emptyState = document.getElementById('emptyState');
             const audioCount = document.getElementById('audioCount');
+            const searchTerm = document.getElementById('searchInput').value;
             
             audioCount.innerHTML = `${audios.length} audio${audios.length !== 1 ? 's' : ''} <span class="connection-status"></span>`;
             
+            if (filteredAudios.length === 0 && searchTerm) {
+                emptyState.classList.remove('hidden');
+                emptyState.innerHTML = `
+                    <svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <path d="m21 21-4.35-4.35"></path>
+                    </svg>
+                    <h2>No se encontraron resultados</h2>
+                    <p>No hay audios que coincidan con "${searchTerm}"</p>
+                `;
+                audioList.innerHTML = '';
+                return;
+            }
+            
             if (audios.length === 0) {
                 emptyState.classList.remove('hidden');
+                emptyState.innerHTML = `
+                    <svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    <h2>No hay audios aún</h2>
+                    <p>Toca el botón de arriba para agregar</p>
+                    <p style="margin-top: 10px; font-size: 12px;">☁️ Biblioteca compartida en la nube</p>
+                `;
                 audioList.innerHTML = '';
                 return;
             }
             
             emptyState.classList.add('hidden');
             
-            audioList.innerHTML = audios.map(audio => {
+            audioList.innerHTML = filteredAudios.map(audio => {
                 const isPlaying = currentPlaying === audio.url;
                 const format = audio.name.split('.').pop().toUpperCase();
                 const safeId = audio.name.replace(/[^a-zA-Z0-9]/g, '_');
@@ -632,4 +734,3 @@
     </script>
 </body>
 </html>
-
