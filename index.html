@@ -483,88 +483,49 @@
             try {
                 showToast('📤 Preparando audio...');
                 
+                // Descargar el archivo
                 const response = await fetch(audio.url);
                 if (!response.ok) throw new Error('Error al descargar');
                 
                 const blob = await response.blob();
                 const extension = audio.name.split('.').pop().toLowerCase();
                 
+                // Mapeo de tipos MIME
                 const mimeTypes = {
                     'mp3': 'audio/mpeg',
-                    'opus': 'audio/ogg',
+                    'opus': 'audio/opus',
                     'ogg': 'audio/ogg',
-                    'm4a': 'audio/mp4',
+                    'm4a': 'audio/x-m4a',
                     'wav': 'audio/wav',
                     'aac': 'audio/aac'
                 };
                 
                 const mimeType = mimeTypes[extension] || 'audio/mpeg';
                 const cleanName = audio.displayName + '.' + extension;
-                const audioBlob = new Blob([blob], { type: mimeType });
-                const file = new File([audioBlob], cleanName, { type: mimeType });
                 
-                // Detectar dispositivo
-                const userAgent = navigator.userAgent.toLowerCase();
-                const isAndroid = userAgent.includes('android');
-                const isIOS = /iphone|ipad|ipod/.test(userAgent);
+                // Crear File con el tipo correcto
+                const file = new File([blob], cleanName, { type: mimeType });
                 
-                // Intentar compartir nativamente
-                if (navigator.share) {
-                    try {
-                        // En iOS funciona perfectamente con files
-                        if (isIOS && navigator.canShare && navigator.canShare({ files: [file] })) {
-                            await navigator.share({
-                                files: [file],
-                                title: audio.displayName
-                            });
-                            return;
-                        }
-                        
-                        // En Android, algunos navegadores soportan compartir files
-                        if (isAndroid && navigator.canShare && navigator.canShare({ files: [file] })) {
-                            await navigator.share({
-                                files: [file],
-                                title: audio.displayName,
-                                text: audio.displayName
-                            });
-                            return;
-                        }
-                        
-                        // Fallback: compartir sin archivo (solo texto)
-                        if (isAndroid) {
-                            // En Android, descargar el archivo primero
-                            downloadAudio(audioBlob, cleanName);
-                            showToast('📥 Descargado. Ahora puedes compartirlo desde tu galería');
-                            return;
-                        }
-                    } catch (shareError) {
-                        if (shareError.name !== 'AbortError') {
-                            console.error('Share error:', shareError);
-                            downloadAudio(audioBlob, cleanName);
-                        }
-                        return;
-                    }
+                console.log('Compartiendo:', cleanName, 'Tipo:', mimeType);
+                
+                // Compartir usando la API nativa
+                if (navigator.share && navigator.canShare({ files: [file] })) {
+                    await navigator.share({
+                        files: [file]
+                    });
+                    showToast('✅ Compartido');
+                } else {
+                    showToast('⚠️ Tu navegador no soporta compartir archivos');
                 }
                 
-                // Si no hay Web Share API, descargar directamente
-                downloadAudio(audioBlob, cleanName);
-                
             } catch (error) {
+                if (error.name === 'AbortError') {
+                    // Usuario canceló, no hacer nada
+                    return;
+                }
                 console.error('Error:', error);
-                showToast('⚠️ Error al compartir');
+                showToast('⚠️ Error: ' + error.message);
             }
-        }
-        
-        function downloadAudio(blob, filename) {
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            setTimeout(() => URL.revokeObjectURL(url), 100);
-            showToast('📥 Audio descargado');
         }
         
         async function deleteAudio(audioName, displayName) {
